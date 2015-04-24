@@ -1,0 +1,122 @@
+---
+title: "Weight Lifting Exercise Prediction"
+author: "EChrist"
+date: "Friday, April 24, 2015"
+output: html_document
+---
+
+The report is part of the [Coursera - Practial Machine Learning](https://class.coursera.org/predmachlearn-013/wiki/syllabus) Course Project.  The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set
+
+# Summary
+
+# Data Processing
+Data provided by the following [Human Activity Recognition](http://groupware.les.inf.puc-rio.br/har) study.  The orignal data can be found there.  For this project a [traing](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) and [test](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv) data set were provided.  
+
+```{r RConfig, echo=FALSE, results='hide', message=FALSE}
+library(ggplot2)
+library(datasets)
+require(graphics)
+require(gridExtra)
+library(caret)
+#library(randomforest)
+setwd("C:/Users/echrist/Google Drive/Coursera/08-PracticalMachineLearning")
+```
+
+```{r LoadTrainingData}
+data.Original<- read.csv("pml-training.csv", stringsAsFactors = FALSE, header=TRUE, na.strings = c("NA",""))
+data <- data.Original
+colnames(data)
+```
+
+# Data Exploration
+The [original study](http://groupware.les.inf.puc-rio.br/har) describes the data set as 
+<blockquote>
+Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+</blockquote>
+
+# Data Preporcessing
+Reviewing the data we should do some data type conversions
+```{r DataType Conversion}
+data$classe<-as.factor(data$classe)
+```
+
+Reviewing the data there are many columns that are largely populated with NA.  I decided to remove these from the inital model to try and simplify the data set.  There are also columns like X (row number, user name and date and time) which I am removing.
+```{r RemoveSparse}
+sparsecols<-(colSums(is.na(data))>nrow(data) *.95)
+data<-data[,!sparsecols]
+removeCols <- c("X", "user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "new_window", "num_window")
+data<-data[,! colnames(data) %in% removeCols]
+```
+
+```{r SplitDataTrasinAndTest}
+partition <- createDataPartition(y = data$classe, p = 0.6, list = FALSE)
+training <- data[partition, ]
+test <- data[-partition, ]
+```
+
+
+# Modeling
+I choose to try two modeling methods, Random Forest and GBM (Generalized Boosted Regression)
+
+```{r ModelRandomForest}
+set.seed(1616)
+rfFit<-train(classe ~ ., method="rf", data=training,verbose=FALSE, trControl = trainControl(method = "cv", number = 4))
+rfFit
+```
+This model was built with 4 fold Cross validation.  
+
+```{r RFInSampleAccuracy}
+t<-training
+t$classe.rf<-predict(rfFit,training)
+confusionMatrix(t$classe.rf,t$classe)
+```
+The confusion Matrix above shows an in sample accuracy value of 1 which 100%.  This means we have an 0% in sample error rate.
+
+
+```{r ModelGBM}
+gbmFit<-train(classe ~ ., method="gbm", data=training, verbose=FALSE, trControl = trainControl(method = "cv", number = 4))
+print(gbmFit)
+```
+This model was built with 4 fold Cross validation.  
+
+
+```{r GBMInSampleAccuracy}
+t<-training
+t$classe.gbm<-predict(gbmFit,training)
+confusionMatrix(t$classe.gbm,t$classe)
+```
+The confusion Matrix above shows an in sample accuracy value of .9746 which 97.46%.  This means we have an 2.56% in sample error rate.
+
+**Model Selection**
+I choose the Random Forest Model due to the higher accuracy with the training data set.
+
+# Model Accuracy
+```{r RFTestAccuracy}
+t<-test
+t$classe.rf<-predict(rfFit,test)
+confusionMatrix(t$classe.rf,t$classe)
+```
+The confusion Matrix above shows an in sample accuracy value of 0.992, which 99.2%.  This means we expect an 0.8% out sample error rate.
+
+
+# Prediction Assignment
+We we also given 20 sperate test casses to submit for the assignment.  Below are the reults the model predicts for each test case.
+
+```{r LoadTestgDataAndClean}
+dataTest<- read.csv("pml-testing.csv", stringsAsFactors = FALSE, header=TRUE, na.strings = c("NA",""))
+dataTest<-dataTest[,!sparsecols]
+submissions<-as.character(predict(rfFit,dataTest))
+submissions
+```
+
+```{r DumpTestCasesToFilesForSubbmission, echo=FALSE}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(submissions)
+```
